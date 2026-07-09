@@ -9,7 +9,7 @@
 # communications. Invoked by Mainframe.py.
 
 from xml.dom import Node
-from equellaclient41 import *
+from equellaclient import *
 import time, datetime
 import zipfile, csv, codecs, io
 import sys, platform
@@ -575,6 +575,12 @@ class Engine:
                 raise Exception(
                     "Collection '" + str(self.collection) + "'" + " not found"
                 )
+
+            if hasattr(self.tle, "_ensure_create_privilege_for_collection"):
+                self.tle._ensure_create_privilege_for_collection(
+                    itemdefuuid, self.collection
+                )
+
             try:
                 if not os.path.isdir(self.csvFilePath):
                     self.echo(

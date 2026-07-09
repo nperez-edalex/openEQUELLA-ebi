@@ -1,0 +1,4 @@
+metadata/name,metadata/description,metadata/keywords/keyword
+REST Smoke Sample 001,Sample item created for REST migration tester validation,"rest,smoke,test"
+REST Smoke Sample 002,Second sample item for bulk import validation,"rest,import,validation"
+REST Smoke Sample 003,Third sample item to confirm multiple row processing,"bulk,csv,qa"

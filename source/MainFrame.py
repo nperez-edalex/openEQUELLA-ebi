@@ -23,7 +23,7 @@ import Utils
 from xml.dom.minidom import Document, parse, parseString
 import urllib.request, urllib.error, urllib.parse
 import configparser
-from equellaclient41 import *
+from equellaclient import *
 
 
 def create(parent):
@@ -2231,6 +2231,7 @@ class MainFrame(wx.Frame):
                 filenameSelected = True
                 path = dlg.GetPath()
                 self.settingsfile = path
+                self.settingsFile = path
             dlg.Destroy()
         else:
             path = self.settingsFile
@@ -2244,11 +2245,38 @@ class MainFrame(wx.Frame):
 
             # save settings file as utf-8
             # toprettyxml with encoding returns bytes, decode to string for text mode
-            fp = open(path, "w", encoding="utf-8")
-            fp.write(settingsDoc.toprettyxml(encoding="utf-8").decode("utf-8"))
-            fp.close()
+            try:
+                fp = open(path, "w", encoding="utf-8")
+                fp.write(settingsDoc.toprettyxml(encoding="utf-8").decode("utf-8"))
+                fp.close()
+            except:
+                if self.debug:
+                    exceptionType, exceptionValue, exceptionTraceback = sys.exc_info()
+                    self.engine.echo(
+                        "".join(
+                            str(line)
+                            for line in traceback.format_exception(
+                                exceptionType, exceptionValue, exceptionTraceback
+                            )
+                        ),
+                        log=False,
+                        style=2,
+                    )
+
+                dlgError = wx.MessageDialog(
+                    self,
+                    "Unable to save settings file.\n\n" + str(sys.exc_info()[1]),
+                    "Settings Save Error",
+                    wx.OK | wx.ICON_ERROR,
+                )
+                dlgError.ShowModal()
+                dlgError.Destroy()
+
+                self.SetCursor(self.normalCursor)
+                return False
 
             self.settingsFile = path
+            self.settingsfile = path
             self.SetTitle("%s - EBI" % os.path.basename(self.settingsFile))
 
             self.dirtyUI = False

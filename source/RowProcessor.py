@@ -5,7 +5,7 @@ import time
 import zipfile
 import wx
 import urllib.parse
-from equellaclient41 import *
+from equellaclient import *
 import Constants
 import Utils
 import uuid
@@ -1613,6 +1613,7 @@ class RowProcessor:
                         pass
                     self.tle = None
                     self.tle = TLEClient(
+                        self,
                         self.institutionUrl,
                         self.username,
                         self.password,
