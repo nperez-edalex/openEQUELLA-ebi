@@ -838,7 +838,7 @@ class TLEClient:
 
         return collections
 
-    def _ensure_create_privilege_for_collection(self, collection_uuid):
+    def _ensure_create_privilege_for_collection(self, collection_uuid, collection_name=None):
         if not collection_uuid:
             return
 
@@ -846,11 +846,13 @@ class TLEClient:
 
         if self._collection_createable:
             if not self._collection_createable.get(collection_uuid, False):
-                collection_name = self._collection_name_by_uuid.get(
-                    collection_uuid, collection_uuid
+                resolved_collection_name = self._collection_name_by_uuid.get(
+                    collection_uuid,
+                    collection_name if collection_name else collection_uuid,
                 )
                 raise Exception(
-                    "No CREATE_ITEM privilege for collection '%s'" % collection_name
+                    "No CREATE_ITEM privilege for collection '%s'"
+                    % resolved_collection_name
                 )
             return
 
