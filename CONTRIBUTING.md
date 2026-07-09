@@ -55,7 +55,7 @@ python3 source/ebi.py
 - `source/MainFrame.py`: Core wxPython GUI definitions and flow wiring.
 - `source/Engine.py`: CSV processing state and data orchestration.
 - `source/RowProcessor.py`: Row-to-item processing logic using a `RowContext`.
-- `source/equellaclient41.py`: SOAP API client for communicating with an openEQUELLA instance.
+- `source/equellaclient_rest.py`: REST API client surface used by EBI.
 
 ## Contribution Workflow
 

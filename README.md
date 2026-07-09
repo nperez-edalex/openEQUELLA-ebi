@@ -15,6 +15,8 @@ For most users, the quickest way to get started is to download the latest standa
 2. Extract or open the downloaded archive.
 3. Launch the EBI application included in the package.
 
+No `.env` setup is required for normal end-user use of the packaged application.
+
 > **Note for macOS users:** When downloading the `ebi.dmg` release asset, macOS Gatekeeper may flag the application as "damaged" because it was downloaded from the internet and lacks an Apple Developer certificate. To run the application, remove the quarantine attribute:
 > ```bash
 > xattr -cr /path/to/ebi.app

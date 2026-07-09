@@ -237,7 +237,7 @@ class Engine:
 
         rawError = str(rawError)
 
-        # check if it is a SOAP error
+        # check if it is an API fault payload
         if rawError.rfind("</faultstring>") != -1:
             # Extract faultstring from 500 code and display/log
             rawError = rawError[
@@ -701,7 +701,7 @@ class Engine:
                         )
                     )
 
-                # check if it is a SOAP error
+                # check if it is an API fault payload
                 if err.rfind("</faultstring>") != -1:
                     # Extract faultstring from 500 code and display/log
                     exact_error = err[
@@ -740,7 +740,7 @@ class Engine:
                     )
                 )
 
-            # check if it is a SOAP error
+            # check if it is an API fault payload
             if err.rfind("</faultstring>") != -1:
                 # Extract faultstring from 500 code and display/log
                 exact_error = err[

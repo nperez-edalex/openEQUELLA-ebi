@@ -7,8 +7,6 @@ Use this checklist to validate REST transport behavior on a test institution.
 - Branch contains REST migration changes.
 - Test openEQUELLA instance with a collection you can write to.
 - A small CSV and attachments set prepared.
-- Set environment variable before running EBI:
-  - `EBI_API_TRANSPORT=rest`
 
 Windows helper:
 - `./scripts/run-rest-mode.ps1`

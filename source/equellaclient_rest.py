@@ -18,11 +18,11 @@ from zipfile import ZipFile
 
 from xml.dom.minidom import Document, parseString
 
-from equellaclient41 import NewItemClient, PropBagEx, XPath
+from equellaclient41 import NewItemClient, PropBagEx
 
 
 class TLEClient:
-    """REST-based client with SOAP-compatible public method names.
+    """REST-based client with legacy-compatible public method names.
 
     The importer calls the historical TLEClient surface directly. This class
     preserves those method names so Engine/RowProcessor do not need a large

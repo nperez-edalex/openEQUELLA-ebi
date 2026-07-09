@@ -7,9 +7,6 @@ SOURCE_DIR = os.path.join(REPO_ROOT, "source")
 if SOURCE_DIR not in sys.path:
     sys.path.insert(0, SOURCE_DIR)
 
-# Force REST transport for this smoke script.
-os.environ["EBI_API_TRANSPORT"] = "rest"
-
 from equellaclient import TLEClient
 
 
@@ -41,7 +38,7 @@ def main():
 
     owner = SmokeOwner()
 
-    print("Connecting with REST transport...")
+    print("Connecting...")
     client = TLEClient(owner, institution_url, username, password)
 
     print("Fetching collections...")
