@@ -267,10 +267,33 @@ class TLEClient:
         import time
         token_captured = {}
         server_ready = {"ready": False}
+        outer_self = self  # Closure reference for nested class
 
         self._debug_log(f"Starting token capture server on port {port}")
 
         class TokenCaptureHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                """Handle POST request with token in JSON body."""
+                try:
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length)
+                    data = json.loads(body.decode())
+
+                    if 'token' in data and data['token']:
+                        token_captured["token"] = data['token']
+                        outer_self._debug_log(f"Token captured via POST: {data['token'][:20]}...")
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status": "success"}).encode())
+                    else:
+                        self.send_response(400)
+                        self.end_headers()
+                except Exception as e:
+                    outer_self._debug_log(f"Error in POST handler: {str(e)}")
+                    self.send_response(500)
+                    self.end_headers()
+
             def do_GET(self):
                 try:
                     query = urllib.parse.urlparse(self.path).query
@@ -283,37 +306,69 @@ class TLEClient:
                         self.send_response(200)
                         self.send_header("Content-type", "text/html")
                         self.end_headers()
-                        # Return success page with auto-close
-                        html = b"""<html><head><title>Authorization Successful</title></head><body>
+                        # Return simple success page
+                        html = b"""<html><head><title>Success</title></head><body>
+<h1>openEQUELLA - EQUELLA Bulk Importer</h1>
+<h2>Authorization Successful!</h2>
+<p>Your account has been authorized successfully.</p>
+<p>The EQUELLA Bulk Importer is now connected.</p>
+<p><strong>This window will close automatically...</strong></p>
 <script>
-  setTimeout(function() { window.close(); }, 2000);
+function closeWindow() {
+  try {
+    window.close();
+  } catch(e) {}
+}
+closeWindow();
+setTimeout(closeWindow, 500);
+setTimeout(closeWindow, 1500);
 </script>
-<p>Authorization successful! This window will close automatically...</p>
 </body></html>"""
                         self.wfile.write(html)
                     else:
                         # Return page with JavaScript to extract token from fragment
                         self.send_response(200)
-                        self.send_header("Content-type", "text/html")
+                        self.send_header("Content-type", "text/html; charset=utf-8")
                         self.end_headers()
-                        html = b"""<html><head><title>OAuth Callback</title></head><body>
+                        html = b"""<html><head><title>Processing</title></head><body>
+<h1>openEQUELLA - EQUELLA Bulk Importer</h1>
+<h2>Completing Authorization...</h2>
+<p>Please wait while we process your authorization.</p>
 <script>
-  // Extract token from URL fragment and send to server
+  // Extract token from URL fragment and send to server via fetch (no redirect)
   if (window.location.hash) {
     var fragment = window.location.hash.substring(1);
     var params = {};
     var parts = fragment.split('&');
     for (var i = 0; i < parts.length; i++) {
       var part = parts[i].split('=');
-      params[decodeURIComponent(part[0])] = decodeURIComponent(part[1]);
+      if (part[0] && part[1]) {
+        params[decodeURIComponent(part[0])] = decodeURIComponent(part[1]);
+      }
     }
     if (params.access_token) {
-      // Redirect with token in query string
-      window.location = '/callback?token=' + encodeURIComponent(params.access_token);
+      // Send token to server via fetch (POST) instead of redirect
+      fetch('/token', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token: params.access_token})
+      }).then(function() {
+        // Success - update page with centered styling
+        document.body.style.textAlign = 'center';
+        document.body.style.padding = '50px 20px';
+        document.body.style.fontFamily = 'Arial, sans-serif';
+        document.body.innerHTML = '<h1 style="color: #1976d2; margin-bottom: 5px;">openEQUELLA</h1><p style="color: #666; margin: 0 0 20px 0;">EQUELLA Bulk Importer</p><div style="color: #2e7d32; font-size: 40px; margin-bottom: 10px;">&#10003;</div><h2 style="color: #2e7d32;">Authorization Successful!</h2><p>Your account has been authorized successfully.</p><p>The EQUELLA Bulk Importer is now connected.</p>';
+      }).catch(function(err) {
+        document.body.innerHTML = '<h1>openEQUELLA - EQUELLA Bulk Importer</h1><h2>Connection Error</h2><p>Please close this window and try again.</p>';
+        setTimeout(function() { window.close(); }, 2000);
+      });
+    } else {
+      document.body.innerHTML = '<h1>openEQUELLA - EQUELLA Bulk Importer</h1><h2>Error</h2><p>No token received. Please try authorizing again.</p>';
     }
+  } else {
+    document.body.innerHTML = '<h1>openEQUELLA - EQUELLA Bulk Importer</h1><h2>Error</h2><p>Authorization failed. Please try again.</p>';
   }
 </script>
-Waiting for authorization...
 </body></html>"""
                         self.wfile.write(html)
                 except Exception as e:
@@ -324,9 +379,10 @@ Waiting for authorization...
 
         try:
             # Start local redirect server in background thread
+            # Bind to both localhost and 127.0.0.1 for compatibility
             server = HTTPServer(("localhost", port), TokenCaptureHandler)
             server.timeout = 5  # Set timeout for handle_request
-            self._debug_log("HTTP server created")
+            self._debug_log(f"HTTP server created on localhost:{port}")
 
             def run_server():
                 try:
@@ -343,14 +399,20 @@ Waiting for authorization...
                     self._debug_log("Server loop ended")
                 except Exception as e:
                     self._debug_log(f"Error in server thread: {str(e)}")
+                finally:
+                    try:
+                        server.server_close()
+                    except:
+                        pass
 
             server_thread = Thread(target=run_server, daemon=True)
             server_thread.start()
             self._debug_log("Server thread started")
 
-            # Wait for server to be ready
+            # Wait for server to be ready - give it more time to actually bind the socket
             wait_count = 0
-            while not server_ready["ready"] and wait_count < 100:
+            max_wait = 200  # 2 seconds max
+            while not server_ready["ready"] and wait_count < max_wait:
                 time.sleep(0.01)
                 wait_count += 1
             self._debug_log("Server is ready")
@@ -376,7 +438,7 @@ Waiting for authorization...
                     wx.OK | wx.CANCEL
                 )
                 if dlg.ShowModal() == wx.ID_OK:
-                    self._debug_log("Opening browser to: {oauth_url}")
+                    self._debug_log(f"Opening browser to: {oauth_url}")
                     webbrowser.open(oauth_url)
                     self._debug_log("Browser opened")
                 else:
