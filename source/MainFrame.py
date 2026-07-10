@@ -1301,10 +1301,18 @@ class MainFrame(wx.Frame):
 
         self.config = configparser.ConfigParser()
 
-        # Pre-fill OAuth settings from saved preferences at startup
+        # Pre-fill connection settings from saved preferences at startup
         saved_url = self.settingsManager.get("institution_url", "")
         if saved_url:
             self.txtInstitutionUrl.SetValue(saved_url)
+
+        saved_username = self.settingsManager.get("username", "")
+        if saved_username:
+            self.txtUsername.SetValue(saved_username)
+
+        saved_password = self.settingsManager.get("password", "")
+        if saved_password:
+            self.txtPassword.SetValue(saved_password)
 
         saved_client_id = self.settingsManager.get("oauth_client_id", "")
         if saved_client_id:
@@ -2294,6 +2302,8 @@ class MainFrame(wx.Frame):
 
                 # Also save to persistent settings.json for auto-fill on next startup
                 self.settingsManager.set("institution_url", self.txtInstitutionUrl.GetValue().strip())
+                self.settingsManager.set("username", self.txtUsername.GetValue().strip())
+                self.settingsManager.set("password", self.txtPassword.GetValue())
                 self.settingsManager.set("oauth_client_id", self.txtOAuthClientId.GetValue().strip())
                 self.settingsManager.save()
             except:
