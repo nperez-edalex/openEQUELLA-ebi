@@ -179,30 +179,6 @@ class OptionsDialog(wx.Dialog):
         box.Add(self.txtOAuthRedirectUri, 1, wx.ALL|wx.EXPAND, padding)
         sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
 
-        sizer.AddSpacer(15)
-
-        # REST Access Token
-        box = wx.BoxSizer(wx.HORIZONTAL)
-        label = wx.StaticText(self.authPage, -1, "REST Access Token:", style=wx.ALIGN_RIGHT)
-        label.SetMinSize(wx.Size(150, -1))
-        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
-        self.txtRestAccessToken = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21), style=wx.TE_PASSWORD)
-        self.txtRestAccessToken.SetToolTip('Optional: Pre-obtained OAuth token UUID')
-        box.Add(self.txtRestAccessToken, 1, wx.ALL|wx.EXPAND, padding)
-        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
-
-        sizer.AddSpacer(10)
-
-        # REST Admin Token
-        box = wx.BoxSizer(wx.HORIZONTAL)
-        label = wx.StaticText(self.authPage, -1, "REST Admin Token:", style=wx.ALIGN_RIGHT)
-        label.SetMinSize(wx.Size(150, -1))
-        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
-        self.txtRestAdminToken = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21), style=wx.TE_PASSWORD)
-        self.txtRestAdminToken.SetToolTip('Optional: Admin token for import operations')
-        box.Add(self.txtRestAdminToken, 1, wx.ALL|wx.EXPAND, padding)
-        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
-
         sizer.AddStretchSpacer()
         self.authPage.SetSizer(sizer)
 

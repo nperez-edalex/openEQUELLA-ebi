@@ -79,6 +79,8 @@ class TLEClient:
         proxypassword="",
         debug=False,
         sso=0,
+        oauth_client_id="",
+        oauth_redirect_uri="http://localhost:9999/callback",
         settings_manager=None,
     ):
         self.owner = owner
@@ -143,13 +145,15 @@ class TLEClient:
         self._collection_name_by_uuid = {}
         self._createable_collection_uuids = None
 
-        # OAuth implicit grant configuration from settings or environment variables
+        # OAuth implicit grant configuration - prefer Connection tab values, then settings, then environment
         self._oauth_client_id = (
-            self.settingsManager.get("oauth_client_id", "").strip()
+            oauth_client_id.strip()
+            or self.settingsManager.get("oauth_client_id", "").strip()
             or os.environ.get("EBI_OAUTH_CLIENT_ID", "").strip()
         )
         self._oauth_redirect_uri = (
-            self.settingsManager.get("oauth_redirect_uri", "").strip()
+            oauth_redirect_uri.strip()
+            or self.settingsManager.get("oauth_redirect_uri", "").strip()
             or os.environ.get("EBI_OAUTH_REDIRECT_URI", "").strip()
         )
 
@@ -158,10 +162,9 @@ class TLEClient:
             if not self._oauth_client_id:
                 raise ValueError(
                     "No authentication configured. Please configure one of:\n"
-                    "  1. OAuth Client ID: Set EBI_OAUTH_CLIENT_ID environment variable\n"
-                    "  2. REST Access Token: Set EBI_REST_ACCESS_TOKEN environment variable\n"
-                    "  3. REST Admin Token: Set EBI_REST_ADMIN_TOKEN environment variable\n\n"
-                    "For GUI: Fill in OAuth/Auth tab in Preferences with Institution URL and OAuth Client ID"
+                    "  1. OAuth Client ID: Enter on Connection tab or set EBI_OAUTH_CLIENT_ID environment variable\n"
+                    "  2. REST Access Token: Set EBI_REST_ACCESS_TOKEN environment variable\n\n"
+                    "For GUI: Fill in OAuth Client ID on the Connection tab"
                 )
 
             # Establish OAuth implicit grant session (REQUIRED - no fallback)

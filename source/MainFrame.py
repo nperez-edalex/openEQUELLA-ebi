@@ -320,6 +320,27 @@ class MainFrame(wx.Frame):
         self.txtPassword.SetToolTip("EQUELLA password")
         self.ConnectionSizer.Add(self.txtPassword)
 
+        label = wx.StaticText(
+            id=-1,
+            label="OAuth Client ID:",
+            name="staticText1",
+            parent=self.connectionPage,
+            size=wx.Size(103, 17),
+            style=wx.ALIGN_RIGHT,
+        )
+        self.ConnectionSizer.Add(label, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+
+        self.txtOAuthClientId = wx.TextCtrl(
+            id=-1,
+            name="txtOAuthClientId",
+            parent=self.connectionPage,
+            size=wx.Size(422, 21),
+            style=0,
+            value="",
+        )
+        self.txtOAuthClientId.SetToolTip("OAuth Client ID (optional - required for OAuth authentication)")
+        self.ConnectionSizer.Add(self.txtOAuthClientId)
+
         self.btnGetCollections = wx.Button(
             id=-1,
             label="Test / Get Collections",
@@ -1003,11 +1024,12 @@ class MainFrame(wx.Frame):
         event.Skip()
 
     def OnInstitutionUrlChange(self, event):
-        self.engine.collectionIDs.clear()
-        self.engine.eqVersionmm = ""
-        self.engine.eqVersionmmr = ""
-        self.engine.eqVersionDisplay = ""
-        self.dirtyUI = True
+        if self.engine is not None:
+            self.engine.collectionIDs.clear()
+            self.engine.eqVersionmm = ""
+            self.engine.eqVersionmmr = ""
+            self.engine.eqVersionDisplay = ""
+            self.dirtyUI = True
         event.Skip()
 
     def UpdateImportExportButtons(self):
@@ -1217,7 +1239,11 @@ class MainFrame(wx.Frame):
         self.savePassword = True
         self.settingsfile = ""
 
+        # Initialize SettingsManager early so it's available for pre-fill
+        self.settingsManager = SettingsManager()
+
         self._init_ctrls(parent)
+
         rect = self.mainStatusBar.GetFieldRect(1)
         self.progressGauge.SetPosition((rect.x, rect.y))
         self.progressBarWidth = rect.width - 40
@@ -1275,6 +1301,15 @@ class MainFrame(wx.Frame):
 
         self.config = configparser.ConfigParser()
 
+        # Pre-fill OAuth settings from saved preferences at startup
+        saved_url = self.settingsManager.get("institution_url", "")
+        if saved_url:
+            self.txtInstitutionUrl.SetValue(saved_url)
+
+        saved_client_id = self.settingsManager.get("oauth_client_id", "")
+        if saved_client_id:
+            self.txtOAuthClientId.SetValue(saved_client_id)
+
     def createEngine(
         self, version, copyright, license, EBIDownloadPage, propertiesFile
     ):
@@ -1284,19 +1319,12 @@ class MainFrame(wx.Frame):
         self.EBIDownloadPage = EBIDownloadPage
         self.propertiesFile = propertiesFile
 
-        # Initialize SettingsManager for OAuth/Auth configuration
-        self.settingsManager = SettingsManager()
-
+        # SettingsManager already created in __init__, just use it
         self.engine = Engine.Engine(self, self.version, self.copyright)
         self.engine.setLog(self.log)
 
         # Pass SettingsManager to engine
         self.engine.settingsManager = self.settingsManager
-
-        # Load saved Institution URL from SettingsManager
-        saved_url = self.settingsManager.get("institution_url", "")
-        if saved_url and hasattr(self, 'txtInstitutionUrl'):
-            self.txtInstitutionUrl.SetValue(saved_url)
 
         manualConfigPrinted = False
         try:
@@ -1486,6 +1514,7 @@ class MainFrame(wx.Frame):
             self.engine.institutionUrl = self.txtInstitutionUrl.GetValue()[:-1]
         self.engine.username = self.txtUsername.GetValue()
         self.engine.password = self.txtPassword.GetValue()
+        self.engine.oauthClientId = self.txtOAuthClientId.GetValue()
         self.engine.collection = self.cmbCollections.GetStringSelection()
         self.engine.csvFilePath = self.getCSVPath()
         self.engine.encoding = self.cmbEncoding.GetStringSelection()
@@ -2262,6 +2291,11 @@ class MainFrame(wx.Frame):
                 fp = open(path, "w", encoding="utf-8")
                 fp.write(settingsDoc.toprettyxml(encoding="utf-8").decode("utf-8"))
                 fp.close()
+
+                # Also save to persistent settings.json for auto-fill on next startup
+                self.settingsManager.set("institution_url", self.txtInstitutionUrl.GetValue().strip())
+                self.settingsManager.set("oauth_client_id", self.txtOAuthClientId.GetValue().strip())
+                self.settingsManager.save()
             except:
                 if self.debug:
                     exceptionType, exceptionValue, exceptionTraceback = sys.exc_info()
@@ -2865,8 +2899,6 @@ class MainFrame(wx.Frame):
             dlg.txtOAuthRedirectUri.SetValue(
                 self.settingsManager.get("oauth_redirect_uri", "default")
             )
-            dlg.txtRestAccessToken.SetValue(self.settingsManager.get("rest_access_token", ""))
-            dlg.txtRestAdminToken.SetValue(self.settingsManager.get("rest_admin_token", ""))
 
             # this does not return until the dialog is closed.
             val = dlg.ShowModal()
@@ -2979,12 +3011,6 @@ class MainFrame(wx.Frame):
                     self.settingsManager.set(
                         "oauth_redirect_uri",
                         dlg.txtOAuthRedirectUri.GetValue().strip() or "default",
-                    )
-                    self.settingsManager.set(
-                        "rest_access_token", dlg.txtRestAccessToken.GetValue().strip()
-                    )
-                    self.settingsManager.set(
-                        "rest_admin_token", dlg.txtRestAdminToken.GetValue().strip()
                     )
                     self.settingsManager.save()
 

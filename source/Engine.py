@@ -100,6 +100,8 @@ class Engine:
         self.institutionUrl = ""
         self.username = ""
         self.password = ""
+        self.oauthClientId = ""
+        self.oauthRedirectUri = "http://localhost:9999/callback"  # Default to localhost callback
         self.collection = ""
         self.csvFilePath = ""
 
@@ -392,6 +394,8 @@ class Engine:
                 self.proxyUsername,
                 self.proxyPassword,
                 self.debug,
+                oauth_client_id=getattr(self, 'oauthClientId', ''),
+                oauth_redirect_uri=getattr(self, 'oauthRedirectUri', 'default'),
                 settings_manager=getattr(self, 'settingsManager', None),
             )
             self.getEquellaVersion()
@@ -542,6 +546,8 @@ class Engine:
                 self.proxyUsername,
                 self.proxyPassword,
                 self.debug,
+                oauth_client_id=getattr(self, 'oauthClientId', ''),
+                oauth_redirect_uri=getattr(self, 'oauthRedirectUri', 'default'),
                 settings_manager=getattr(self, 'settingsManager', None),
             )
 
