@@ -24,6 +24,7 @@ from xml.dom.minidom import Document, parse, parseString
 import urllib.request, urllib.error, urllib.parse
 import configparser
 from equellaclient import *
+from equella_settings import SettingsManager
 
 
 def create(parent):
@@ -1282,8 +1283,20 @@ class MainFrame(wx.Frame):
         self.license = license
         self.EBIDownloadPage = EBIDownloadPage
         self.propertiesFile = propertiesFile
+
+        # Initialize SettingsManager for OAuth/Auth configuration
+        self.settingsManager = SettingsManager()
+
         self.engine = Engine.Engine(self, self.version, self.copyright)
         self.engine.setLog(self.log)
+
+        # Pass SettingsManager to engine
+        self.engine.settingsManager = self.settingsManager
+
+        # Load saved Institution URL from SettingsManager
+        saved_url = self.settingsManager.get("institution_url", "")
+        if saved_url and hasattr(self, 'txtInstitutionUrl'):
+            self.txtInstitutionUrl.SetValue(saved_url)
 
         manualConfigPrinted = False
         try:
@@ -2846,6 +2859,15 @@ class MainFrame(wx.Frame):
             dlg.txtProxyUsername.SetValue(str(self.engine.proxyUsername))
             dlg.txtProxyPassword.SetValue(str(self.engine.proxyPassword))
 
+            # Load OAuth/Auth settings from SettingsManager
+            dlg.txtInstitutionUrl.SetValue(self.settingsManager.get("institution_url", ""))
+            dlg.txtOAuthClientId.SetValue(self.settingsManager.get("oauth_client_id", ""))
+            dlg.txtOAuthRedirectUri.SetValue(
+                self.settingsManager.get("oauth_redirect_uri", "default")
+            )
+            dlg.txtRestAccessToken.SetValue(self.settingsManager.get("rest_access_token", ""))
+            dlg.txtRestAdminToken.SetValue(self.settingsManager.get("rest_admin_token", ""))
+
             # this does not return until the dialog is closed.
             val = dlg.ShowModal()
 
@@ -2946,6 +2968,25 @@ class MainFrame(wx.Frame):
                             )
                         except:
                             pass
+
+                    # Save OAuth/Auth settings to SettingsManager
+                    self.settingsManager.set(
+                        "institution_url", dlg.txtInstitutionUrl.GetValue().strip()
+                    )
+                    self.settingsManager.set(
+                        "oauth_client_id", dlg.txtOAuthClientId.GetValue().strip()
+                    )
+                    self.settingsManager.set(
+                        "oauth_redirect_uri",
+                        dlg.txtOAuthRedirectUri.GetValue().strip() or "default",
+                    )
+                    self.settingsManager.set(
+                        "rest_access_token", dlg.txtRestAccessToken.GetValue().strip()
+                    )
+                    self.settingsManager.set(
+                        "rest_admin_token", dlg.txtRestAdminToken.GetValue().strip()
+                    )
+                    self.settingsManager.save()
 
                     self.config.write(open(self.propertiesFile, "w"))
                 except:

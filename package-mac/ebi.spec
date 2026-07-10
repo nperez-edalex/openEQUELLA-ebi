@@ -62,6 +62,15 @@ hiddenimports = [
     'configparser',
     'html.parser',
     'xml.etree.ElementTree',
+    'webbrowser',
+    'http.server',
+    'http.client',
+    'json',
+    'pathlib',
+    'urllib.request',
+    'urllib.parse',
+    'urllib.error',
+    'threading',
 ]
 
 a = Analysis(

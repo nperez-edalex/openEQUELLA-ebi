@@ -10,15 +10,54 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from binascii import a2b_base64
 from http.cookiejar import CookieJar
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from zipfile import ZipFile
+from threading import Thread
 
 from xml.dom.minidom import Document, parseString
 
 from equellaclient41 import NewItemClient, PropBagEx
+from equella_settings import SettingsManager
+
+
+class _OAuthImplicitGrantHandler(BaseHTTPRequestHandler):
+    """Handles OAuth implicit grant redirect and extracts token from URL fragment."""
+
+    _extracted_token = None
+
+    def do_GET(self):
+        """Handle the redirect from OAuth provider with token in fragment."""
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+        body = """
+        <html>
+        <head><title>OAuth Authorization</title></head>
+        <body>
+        <script>
+            if (window.location.hash) {
+                var params = new URLSearchParams(window.location.hash.substring(1));
+                var token = params.get('access_token');
+                if (token) {
+                    fetch('/token?token=' + encodeURIComponent(token));
+                    document.body.innerHTML = '<h1>Authorization successful!</h1><p>You can close this window.</p>';
+                }
+            }
+        </script>
+        </body>
+        </html>
+        """
+        self.wfile.write(body.encode())
+
+    def log_message(self, format, *args):
+        """Suppress default logging."""
+        pass
 
 
 class TLEClient:
@@ -40,6 +79,7 @@ class TLEClient:
         proxypassword="",
         debug=False,
         sso=0,
+        settings_manager=None,
     ):
         self.owner = owner
         self.debug = debug
@@ -48,6 +88,13 @@ class TLEClient:
         self.proxy = proxy
         self.proxyusername = proxyusername
         self.proxypassword = proxypassword
+
+        # Initialize settings manager
+        self.settingsManager = settings_manager or SettingsManager()
+
+        # Use provided institutionUrl, or fall back to settings
+        if not institutionUrl:
+            institutionUrl = self.settingsManager.get("institution_url", "")
 
         self.institutionUrl = institutionUrl
         urlLogonPagePos = self.institutionUrl.find("/logon.do")
@@ -80,8 +127,15 @@ class TLEClient:
         self._opener = urllib.request.build_opener(*handlers)
         urllib.request.install_opener(self._opener)
 
-        self._rest_access_token = os.environ.get("EBI_REST_ACCESS_TOKEN", "").strip()
-        self._rest_admin_token = os.environ.get("EBI_REST_ADMIN_TOKEN", "").strip()
+        # Load tokens from settings or environment variables
+        self._rest_access_token = (
+            self.settingsManager.get("rest_access_token", "").strip()
+            or os.environ.get("EBI_REST_ACCESS_TOKEN", "").strip()
+        )
+        self._rest_admin_token = (
+            self.settingsManager.get("rest_admin_token", "").strip()
+            or os.environ.get("EBI_REST_ADMIN_TOKEN", "").strip()
+        )
 
         self._sessions = {}
         self._upload_buffers = {}
@@ -89,10 +143,29 @@ class TLEClient:
         self._collection_name_by_uuid = {}
         self._createable_collection_uuids = None
 
-        # Prefer explicit token auth when provided. This supports SSO-only sites
-        # where credential form-post login endpoints are unavailable.
+        # OAuth implicit grant configuration from settings or environment variables
+        self._oauth_client_id = (
+            self.settingsManager.get("oauth_client_id", "").strip()
+            or os.environ.get("EBI_OAUTH_CLIENT_ID", "").strip()
+        )
+        self._oauth_redirect_uri = (
+            self.settingsManager.get("oauth_redirect_uri", "").strip()
+            or os.environ.get("EBI_OAUTH_REDIRECT_URI", "").strip()
+        )
+
+        # Authentication: OAuth implicit grant or explicit tokens required (NO FALLBACK TO COOKIES)
         if not (self._rest_access_token or self._rest_admin_token):
-            self._establish_cookie_session()
+            if not self._oauth_client_id:
+                raise ValueError(
+                    "No authentication configured. Please configure one of:\n"
+                    "  1. OAuth Client ID: Set EBI_OAUTH_CLIENT_ID environment variable\n"
+                    "  2. REST Access Token: Set EBI_REST_ACCESS_TOKEN environment variable\n"
+                    "  3. REST Admin Token: Set EBI_REST_ADMIN_TOKEN environment variable\n\n"
+                    "For GUI: Fill in OAuth/Auth tab in Preferences with Institution URL and OAuth Client ID"
+                )
+
+            # Establish OAuth implicit grant session (REQUIRED - no fallback)
+            self._establish_implicit_grant_session()
 
     def _not_implemented(self, method):
         raise NotImplementedError(
@@ -112,6 +185,278 @@ class TLEClient:
             if cookie.name and cookie.name.upper().startswith("JSESSIONID"):
                 return True
         return False
+
+    def _establish_implicit_grant_session(self):
+        """Establish OAuth session using implicit grant flow.
+
+        Opens a browser to the OAuth authorization endpoint. The user extracts
+        the token from the browser URL and pastes it back into the application.
+        """
+        try:
+            self._debug_log("Starting OAuth implicit grant session")
+
+            # Determine redirect URI: use custom if provided, otherwise "default"
+            redirect_uri = self._oauth_redirect_uri or "default"
+            use_custom_redirect = redirect_uri != "default"
+
+            self._debug_log(f"Using redirect URI: {redirect_uri}")
+
+            # Build OAuth authorization URL
+            oauth_authorize_url = (
+                f"{self.institutionUrl}/oauth/authorise?"
+                f"response_type=token&"
+                f"client_id={self._oauth_client_id}&"
+                f"redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
+            )
+
+            self._debug_log(f"OAuth URL: {oauth_authorize_url}")
+
+            token = None
+
+            if use_custom_redirect:
+                # Using custom localhost redirect - set up server to capture
+                self._debug_log("Using custom redirect URL with local server")
+                token = self._capture_implicit_grant_token_via_server(redirect_uri=redirect_uri)
+            else:
+                # Using default redirect - user must extract token from browser
+                self._debug_log("Using default redirect - prompting user for manual token entry")
+                webbrowser.open(oauth_authorize_url)
+                token = self._prompt_for_implicit_grant_token()
+
+            if not token:
+                raise Exception(
+                    "Failed to obtain OAuth token via implicit grant. "
+                    "Set EBI_OAUTH_CLIENT_ID and optionally EBI_OAUTH_REDIRECT_URI environment variables. "
+                    "Or use EBI_REST_ACCESS_TOKEN/EBI_REST_ADMIN_TOKEN for explicit token auth."
+                )
+
+            self._debug_log(f"OAuth token obtained successfully")
+            self._rest_access_token = token
+
+            # Save token to settings for reuse
+            if self.settingsManager:
+                self.settingsManager.set("rest_access_token", token)
+                self._debug_log("Token saved to settings")
+
+        except Exception as e:
+            self._debug_log(f"OAuth error: {str(e)}")
+            raise
+
+    def _debug_log(self, message):
+        """Write debug message to file for troubleshooting."""
+        try:
+            import datetime
+            log_file = os.path.join(os.path.expanduser("~"), "ebi_oauth_debug.log")
+            with open(log_file, "a") as f:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                f.write(f"[{timestamp}] {message}\n")
+            if self.debug:
+                print(f"[OAuth Debug] {message}")
+        except:
+            pass
+
+    def _capture_implicit_grant_token_via_server(self, redirect_uri, port=9999):
+        """Start a local HTTP server to capture the OAuth token from redirect.
+
+        Opens browser to OAuth endpoint which redirects to localhost.
+        Extracts token from the redirect URL fragment.
+        """
+        import time
+        token_captured = {}
+        server_ready = {"ready": False}
+
+        self._debug_log(f"Starting token capture server on port {port}")
+
+        class TokenCaptureHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    query = urllib.parse.urlparse(self.path).query
+                    params = urllib.parse.parse_qs(query)
+
+                    if "token" in params and params["token"]:
+                        # Token sent via query string from JavaScript
+                        token_captured["token"] = params["token"][0]
+                        self._debug_log(f"Token captured from query: {params['token'][0][:20]}...")
+                        self.send_response(200)
+                        self.send_header("Content-type", "text/html")
+                        self.end_headers()
+                        # Return success page with auto-close
+                        html = b"""<html><head><title>Authorization Successful</title></head><body>
+<script>
+  setTimeout(function() { window.close(); }, 2000);
+</script>
+<p>Authorization successful! This window will close automatically...</p>
+</body></html>"""
+                        self.wfile.write(html)
+                    else:
+                        # Return page with JavaScript to extract token from fragment
+                        self.send_response(200)
+                        self.send_header("Content-type", "text/html")
+                        self.end_headers()
+                        html = b"""<html><head><title>OAuth Callback</title></head><body>
+<script>
+  // Extract token from URL fragment and send to server
+  if (window.location.hash) {
+    var fragment = window.location.hash.substring(1);
+    var params = {};
+    var parts = fragment.split('&');
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i].split('=');
+      params[decodeURIComponent(part[0])] = decodeURIComponent(part[1]);
+    }
+    if (params.access_token) {
+      // Redirect with token in query string
+      window.location = '/callback?token=' + encodeURIComponent(params.access_token);
+    }
+  }
+</script>
+Waiting for authorization...
+</body></html>"""
+                        self.wfile.write(html)
+                except Exception as e:
+                    self._debug_log(f"Error in do_GET: {str(e)}")
+
+            def log_message(self, format, *args):
+                pass
+
+        try:
+            # Start local redirect server in background thread
+            server = HTTPServer(("localhost", port), TokenCaptureHandler)
+            server.timeout = 5  # Set timeout for handle_request
+            self._debug_log("HTTP server created")
+
+            def run_server():
+                try:
+                    server_ready["ready"] = True
+                    self._debug_log("Server thread started, listening for requests")
+                    # Handle requests in a loop with timeout until token is received or timeout expires
+                    timeout_time = time.time() + 300  # 5 minute timeout
+                    while time.time() < timeout_time and "token" not in token_captured:
+                        try:
+                            server.handle_request()  # Wait up to 5 seconds for a request
+                        except Exception as e:
+                            self._debug_log(f"Error handling request: {str(e)}")
+                            break
+                    self._debug_log("Server loop ended")
+                except Exception as e:
+                    self._debug_log(f"Error in server thread: {str(e)}")
+
+            server_thread = Thread(target=run_server, daemon=True)
+            server_thread.start()
+            self._debug_log("Server thread started")
+
+            # Wait for server to be ready
+            wait_count = 0
+            while not server_ready["ready"] and wait_count < 100:
+                time.sleep(0.01)
+                wait_count += 1
+            self._debug_log("Server is ready")
+
+            # Build OAuth URL
+            base_url = self.institutionUrl.rstrip('/')
+            oauth_url = (
+                f"{base_url}/oauth/authorise?"
+                f"response_type=token&"
+                f"client_id={self._oauth_client_id}&"
+                f"redirect_uri={urllib.parse.quote(redirect_uri, safe=':/')}"
+            )
+            self._debug_log(f"OAuth URL: {oauth_url}")
+
+            # Show dialog to open browser (user controls when to open)
+            try:
+                import wx
+                dlg = wx.MessageDialog(
+                    None,
+                    "Click 'OK' to open your browser for authorization.\n\n"
+                    "After authorizing, the window will close automatically.",
+                    "OAuth Authorization Required",
+                    wx.OK | wx.CANCEL
+                )
+                if dlg.ShowModal() == wx.ID_OK:
+                    self._debug_log("Opening browser to: {oauth_url}")
+                    webbrowser.open(oauth_url)
+                    self._debug_log("Browser opened")
+                else:
+                    dlg.Destroy()
+                    raise Exception("User cancelled OAuth authorization")
+                dlg.Destroy()
+            except:
+                # Fallback: just open browser without dialog
+                self._debug_log(f"Opening browser to: {oauth_url}")
+                webbrowser.open(oauth_url)
+                self._debug_log("Browser opened")
+
+            # Wait for token with timeout
+            self._debug_log("Waiting for token...")
+            timeout_time = time.time() + 300  # 5 minute timeout
+            while "token" not in token_captured and time.time() < timeout_time:
+                time.sleep(0.5)
+
+            self._debug_log("Token wait loop ended")
+            # Give browser time to execute JavaScript and close window
+            time.sleep(3)
+            server.server_close()
+            self._debug_log("Server closed")
+
+            if "token" not in token_captured:
+                raise Exception("OAuth token not received within timeout period")
+
+            self._debug_log(f"Token obtained: {token_captured['token'][:20]}...")
+            return token_captured["token"]
+
+        except Exception as e:
+            self._debug_log(f"Token capture error: {str(e)}")
+            raise
+
+    def _prompt_for_implicit_grant_token(self):
+        """Prompt user to extract token from browser redirect URL.
+
+        When using default redirect, the browser shows the token in the URL.
+        User must copy it and paste it here. Uses wxPython dialog if available.
+        """
+        import time
+
+        # Give browser time to load
+        time.sleep(2)
+
+        # Try to use wxPython dialog
+        try:
+            import wx
+            app = wx.GetApp()
+            if app is None:
+                # No wx app running, fall back to simple message
+                raise ImportError("No wx app")
+
+            dlg = wx.TextEntryDialog(
+                None,
+                "Look at your browser's address bar after approving authorization.\n\n"
+                "Copy the token from:\n"
+                "https://dev1.consulting.edalex.com/demo/oauth/redirect#access_token=YOUR_TOKEN_HERE\n\n"
+                "Paste the token (the long alphanumeric string after 'access_token=') below:",
+                "OAuth Token Required"
+            )
+            dlg.SetValue("")
+
+            if dlg.ShowModal() == wx.ID_OK:
+                token = dlg.GetValue().strip()
+                dlg.Destroy()
+                if token:
+                    self._debug_log(f"Token accepted from dialog: {token[:20]}...")
+                    return token
+            dlg.Destroy()
+            return None
+
+        except:
+            # Fall back to console input (for testing)
+            self._debug_log("Using console input for token (no wx dialog available)")
+            try:
+                token = input("\nPaste your OAuth token here: ").strip()
+                if token:
+                    self._debug_log(f"Token accepted from console: {token[:20]}...")
+                    return token
+            except:
+                self._debug_log("Could not get input from console")
+                return None
 
     def _establish_cookie_session(self):
         headers = {

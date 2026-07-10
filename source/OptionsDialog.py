@@ -21,6 +21,10 @@ class AdvancedPage(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
 
+class AuthPage(wx.Panel):
+    def __init__(self, parent):
+        wx.Panel.__init__(self, parent)
+
 class OptionsDialog(wx.Dialog):
     def _init_ctrls(self, prnt):
         wx.Dialog.__init__(self, style=wx.DEFAULT_DIALOG_STYLE, name='', parent=prnt, title='Preferences', pos=wx.Point(-1, -1), id=wxID_OPTIONSDIALOG, size=wx.Size(440, 350))
@@ -30,7 +34,9 @@ class OptionsDialog(wx.Dialog):
         self.basicPage = BasicPage(self.nb)
         self.nb.AddPage(self.basicPage, "Basic")
         self.advancedPage = AdvancedPage(self.nb)
-        self.nb.AddPage(self.advancedPage, "Advanced")  
+        self.nb.AddPage(self.advancedPage, "Advanced")
+        self.authPage = AuthPage(self.nb)
+        self.nb.AddPage(self.authPage, "OAuth/Auth")  
 
         self.mainBoxSizer = wx.BoxSizer(orient=wx.VERTICAL)
         self.mainBoxSizer.Add(self.nb, 1, border=0, flag=wx.EXPAND)
@@ -134,6 +140,71 @@ class OptionsDialog(wx.Dialog):
         sizer.Add(box, 0, wx.ALL, padding)
 
         self.advancedPage.SetSizer(sizer)
+
+        # OAuth/Auth tab
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.AddSpacer(10)
+
+        # Institution URL
+        box = wx.BoxSizer(wx.HORIZONTAL)
+        label = wx.StaticText(self.authPage, -1, "Institution URL:", style=wx.ALIGN_RIGHT)
+        label.SetMinSize(wx.Size(150, -1))
+        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
+        self.txtInstitutionUrl = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21))
+        self.txtInstitutionUrl.SetToolTip('e.g., https://equella.your-institution.edu (no trailing slash)')
+        box.Add(self.txtInstitutionUrl, 1, wx.ALL|wx.EXPAND, padding)
+        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
+
+        sizer.AddSpacer(10)
+
+        # OAuth Client ID
+        box = wx.BoxSizer(wx.HORIZONTAL)
+        label = wx.StaticText(self.authPage, -1, "OAuth Client ID:", style=wx.ALIGN_RIGHT)
+        label.SetMinSize(wx.Size(150, -1))
+        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
+        self.txtOAuthClientId = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21))
+        self.txtOAuthClientId.SetToolTip('From openEQUELLA Settings → Integration → OAuth')
+        box.Add(self.txtOAuthClientId, 1, wx.ALL|wx.EXPAND, padding)
+        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
+
+        sizer.AddSpacer(10)
+
+        # OAuth Redirect URI
+        box = wx.BoxSizer(wx.HORIZONTAL)
+        label = wx.StaticText(self.authPage, -1, "OAuth Redirect URI:", style=wx.ALIGN_RIGHT)
+        label.SetMinSize(wx.Size(150, -1))
+        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
+        self.txtOAuthRedirectUri = wx.TextCtrl(self.authPage, -1, "default", size=wx.Size(250, 21))
+        self.txtOAuthRedirectUri.SetToolTip('Leave as "default" for automatic token capture')
+        box.Add(self.txtOAuthRedirectUri, 1, wx.ALL|wx.EXPAND, padding)
+        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
+
+        sizer.AddSpacer(15)
+
+        # REST Access Token
+        box = wx.BoxSizer(wx.HORIZONTAL)
+        label = wx.StaticText(self.authPage, -1, "REST Access Token:", style=wx.ALIGN_RIGHT)
+        label.SetMinSize(wx.Size(150, -1))
+        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
+        self.txtRestAccessToken = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21), style=wx.TE_PASSWORD)
+        self.txtRestAccessToken.SetToolTip('Optional: Pre-obtained OAuth token UUID')
+        box.Add(self.txtRestAccessToken, 1, wx.ALL|wx.EXPAND, padding)
+        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
+
+        sizer.AddSpacer(10)
+
+        # REST Admin Token
+        box = wx.BoxSizer(wx.HORIZONTAL)
+        label = wx.StaticText(self.authPage, -1, "REST Admin Token:", style=wx.ALIGN_RIGHT)
+        label.SetMinSize(wx.Size(150, -1))
+        box.Add(label, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL, padding)
+        self.txtRestAdminToken = wx.TextCtrl(self.authPage, -1, "", size=wx.Size(250, 21), style=wx.TE_PASSWORD)
+        self.txtRestAdminToken.SetToolTip('Optional: Admin token for import operations')
+        box.Add(self.txtRestAdminToken, 1, wx.ALL|wx.EXPAND, padding)
+        sizer.Add(box, 0, wx.ALL|wx.EXPAND, 0)
+
+        sizer.AddStretchSpacer()
+        self.authPage.SetSizer(sizer)
 
         btnsizer = wx.StdDialogButtonSizer()
         btn = wx.Button(self, wx.ID_OK)

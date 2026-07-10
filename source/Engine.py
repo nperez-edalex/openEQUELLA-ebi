@@ -392,6 +392,7 @@ class Engine:
                 self.proxyUsername,
                 self.proxyPassword,
                 self.debug,
+                settings_manager=getattr(self, 'settingsManager', None),
             )
             self.getEquellaVersion()
         except:
@@ -541,6 +542,7 @@ class Engine:
                 self.proxyUsername,
                 self.proxyPassword,
                 self.debug,
+                settings_manager=getattr(self, 'settingsManager', None),
             )
 
             # get EQUELLA version
