@@ -105,6 +105,9 @@ class TLEClient:
         if self.institutionUrl.endswith("/"):
             self.institutionUrl = self.institutionUrl[:-1]
 
+        # Validate institution URL for security
+        self._validate_institution_url(self.institutionUrl)
+
         parsed = urlparse(self.institutionUrl)
         self.protocol = parsed.scheme
         self.host = parsed.netloc
@@ -254,6 +257,34 @@ class TLEClient:
         except Exception as e:
             self._debug_log(f"OAuth error: {str(e)}")
             raise
+
+    def _validate_institution_url(self, url):
+        """Validate institution URL for security.
+
+        Ensures the URL uses HTTPS and is properly formatted to prevent
+        man-in-the-middle attacks and URL-based attacks.
+        """
+        if not url:
+            raise ValueError("Institution URL cannot be empty")
+
+        try:
+            parsed = urllib.parse.urlparse(url)
+
+            # Must use HTTPS for production institutions (security requirement)
+            if parsed.scheme != "https" and not parsed.hostname in ("localhost", "127.0.0.1"):
+                raise ValueError(f"Institution URL must use HTTPS for security, got '{parsed.scheme}://'")
+
+            # Must have a valid hostname
+            if not parsed.hostname:
+                raise ValueError(f"Institution URL has invalid hostname")
+
+            # Must not contain credentials in URL
+            if parsed.username or parsed.password:
+                raise ValueError("Institution URL must not contain credentials - use settings tab instead")
+
+            self._debug_log(f"Institution URL validation passed: {url}")
+        except ValueError as e:
+            raise ValueError(f"Invalid institution URL: {e}") from e
 
     def _validate_oauth_redirect_uri(self, redirect_uri):
         """Validate OAuth redirect URI for security.
