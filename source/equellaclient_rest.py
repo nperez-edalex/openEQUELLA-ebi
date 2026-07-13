@@ -285,6 +285,32 @@ class TLEClient:
         except ValueError as e:
             raise ValueError(f"Invalid OAuth redirect URI: {e}") from e
 
+    def _validate_oauth_token(self, token):
+        """Validate OAuth access token format for security.
+
+        Ensures token is non-empty and has reasonable length to prevent
+        accepting invalid or malformed tokens.
+        """
+        if not token or not isinstance(token, str):
+            raise ValueError("Token must be a non-empty string")
+
+        token = token.strip()
+        if not token:
+            raise ValueError("Token cannot be empty")
+
+        # Check reasonable length (typical OAuth tokens are 20-2000 chars)
+        if len(token) < 10:
+            raise ValueError(f"Token too short ({len(token)} chars) - likely invalid")
+
+        if len(token) > 10000:
+            raise ValueError(f"Token too long ({len(token)} chars) - likely corrupted")
+
+        # Tokens should contain alphanumeric and common special chars (no spaces or newlines)
+        if any(c in token for c in ['\n', '\r', '\t', ' ']):
+            raise ValueError("Token contains invalid whitespace characters")
+
+        return token.strip()
+
     def _debug_log(self, message):
         """Write debug message to file for troubleshooting."""
         try:
@@ -328,12 +354,21 @@ class TLEClient:
                         return
 
                     if 'token' in data and data['token']:
-                        token_captured["token"] = data['token']
-                        outer_self._debug_log(f"Token captured via POST: {data['token'][:20]}...")
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({"status": "success"}).encode())
+                        try:
+                            # Validate token format before accepting
+                            validated_token = outer_self._validate_oauth_token(data['token'])
+                            token_captured["token"] = validated_token
+                            outer_self._debug_log(f"Token captured via POST: {validated_token[:20]}...")
+                            self.send_response(200)
+                            self.send_header("Content-type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(json.dumps({"status": "success"}).encode())
+                        except ValueError as e:
+                            outer_self._debug_log(f"Token validation failed: {str(e)}")
+                            self.send_response(400)
+                            self.send_header("Content-type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(json.dumps({"error": "Invalid token format"}).encode())
                     else:
                         self.send_response(400)
                         self.end_headers()
@@ -357,11 +392,17 @@ class TLEClient:
                         return
 
                     if "token" in params and params["token"]:
-                        # Token sent via query string from JavaScript
-                        token_captured["token"] = params["token"][0]
-                        self._debug_log(f"Token captured from query: {params['token'][0][:20]}...")
-                        self.send_response(200)
-                        self.send_header("Content-type", "text/html")
+                        try:
+                            # Validate token format before accepting
+                            validated_token = outer_self._validate_oauth_token(params["token"][0])
+                            token_captured["token"] = validated_token
+                            outer_self._debug_log(f"Token captured from query: {validated_token[:20]}...")
+                            self.send_response(200)
+                            self.send_header("Content-type", "text/html")
+                        except ValueError as e:
+                            outer_self._debug_log(f"Token validation failed in GET: {str(e)}")
+                            self.send_response(400)
+                            self.send_header("Content-type", "text/html")
                         self.end_headers()
                         # Return simple success page
                         html = b"""<html><head><title>Success</title></head><body>
@@ -573,8 +614,13 @@ setTimeout(closeWindow, 1500);
                 token = dlg.GetValue().strip()
                 dlg.Destroy()
                 if token:
-                    self._debug_log(f"Token accepted from dialog: {token[:20]}...")
-                    return token
+                    try:
+                        validated_token = self._validate_oauth_token(token)
+                        self._debug_log(f"Token accepted from dialog: {validated_token[:20]}...")
+                        return validated_token
+                    except ValueError as e:
+                        self._debug_log(f"Token validation failed: {str(e)}")
+                        return None
             dlg.Destroy()
             return None
 
@@ -584,8 +630,13 @@ setTimeout(closeWindow, 1500);
             try:
                 token = input("\nPaste your OAuth token here: ").strip()
                 if token:
-                    self._debug_log(f"Token accepted from console: {token[:20]}...")
-                    return token
+                    try:
+                        validated_token = self._validate_oauth_token(token)
+                        self._debug_log(f"Token accepted from console: {validated_token[:20]}...")
+                        return validated_token
+                    except ValueError as e:
+                        self._debug_log(f"Token validation failed: {str(e)}")
+                        return None
             except:
                 self._debug_log("Could not get input from console")
                 return None
