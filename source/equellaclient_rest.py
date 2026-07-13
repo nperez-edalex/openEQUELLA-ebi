@@ -205,12 +205,18 @@ class TLEClient:
 
             self._debug_log(f"Using redirect URI: {redirect_uri}")
 
-            # Build OAuth authorization URL
+            # Generate state parameter for CSRF protection
+            import secrets
+            oauth_state = secrets.token_urlsafe(32)
+            self._debug_log(f"Generated OAuth state for CSRF protection")
+
+            # Build OAuth authorization URL with state parameter
             oauth_authorize_url = (
                 f"{self.institutionUrl}/oauth/authorise?"
                 f"response_type=token&"
                 f"client_id={self._oauth_client_id}&"
-                f"redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
+                f"redirect_uri={urllib.parse.quote(redirect_uri, safe='')}&"
+                f"state={oauth_state}"
             )
 
             self._debug_log(f"OAuth URL: {oauth_authorize_url}")
@@ -220,7 +226,7 @@ class TLEClient:
             if use_custom_redirect:
                 # Using custom localhost redirect - set up server to capture
                 self._debug_log("Using custom redirect URL with local server")
-                token = self._capture_implicit_grant_token_via_server(redirect_uri=redirect_uri)
+                token = self._capture_implicit_grant_token_via_server(redirect_uri=redirect_uri, expected_state=oauth_state)
             else:
                 # Using default redirect - user must extract token from browser
                 self._debug_log("Using default redirect - prompting user for manual token entry")
@@ -259,11 +265,12 @@ class TLEClient:
         except:
             pass
 
-    def _capture_implicit_grant_token_via_server(self, redirect_uri, port=9999):
+    def _capture_implicit_grant_token_via_server(self, redirect_uri, port=9999, expected_state=None):
         """Start a local HTTP server to capture the OAuth token from redirect.
 
         Opens browser to OAuth endpoint which redirects to localhost.
         Extracts token from the redirect URL fragment.
+        Validates CSRF state parameter if provided.
         """
         import time
         token_captured = {}
@@ -279,6 +286,13 @@ class TLEClient:
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length)
                     data = json.loads(body.decode())
+
+                    # Validate CSRF state if expected
+                    if expected_state and data.get('state') != expected_state:
+                        outer_self._debug_log(f"State validation failed: {data.get('state')} != {expected_state}")
+                        self.send_response(400)
+                        self.end_headers()
+                        return
 
                     if 'token' in data and data['token']:
                         token_captured["token"] = data['token']
@@ -299,6 +313,15 @@ class TLEClient:
                 try:
                     query = urllib.parse.urlparse(self.path).query
                     params = urllib.parse.parse_qs(query)
+
+                    # Validate CSRF state if expected
+                    if expected_state and params.get("state", [None])[0] != expected_state:
+                        outer_self._debug_log(f"State validation failed in GET: {params.get('state')} != {expected_state}")
+                        self.send_response(400)
+                        self.send_header("Content-type", "text/html")
+                        self.end_headers()
+                        self.wfile.write(b"<h1>Authentication Error</h1><p>Invalid state parameter - possible CSRF attack.</p>")
+                        return
 
                     if "token" in params and params["token"]:
                         # Token sent via query string from JavaScript
@@ -348,11 +371,11 @@ setTimeout(closeWindow, 1500);
       }
     }
     if (params.access_token) {
-      // Send token to server via fetch (POST) instead of redirect
+      // Send token and state to server via fetch (POST) instead of redirect
       fetch('/token', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({token: params.access_token})
+        body: JSON.stringify({token: params.access_token, state: params.state})
       }).then(function() {
         // Success - update page with centered styling
         document.body.style.textAlign = 'center';
@@ -380,10 +403,20 @@ setTimeout(closeWindow, 1500);
 
         try:
             # Start local redirect server in background thread
-            # Bind to both localhost and 127.0.0.1 for compatibility
-            server = HTTPServer(("localhost", port), TokenCaptureHandler)
-            server.timeout = 5  # Set timeout for handle_request
-            self._debug_log(f"HTTP server created on localhost:{port}")
+            # Bind to localhost for OAuth callback
+            try:
+                server = HTTPServer(("localhost", port), TokenCaptureHandler)
+                server.timeout = 5  # Set timeout for handle_request
+                self._debug_log(f"HTTP server created on localhost:{port}")
+            except OSError as e:
+                if e.errno == 48 or e.errno == 98:  # Address already in use (macOS/Linux/Windows)
+                    raise RuntimeError(
+                        f"Port {port} is already in use. This usually means:\n"
+                        f"1. Another EBI process is still running\n"
+                        f"2. Another application is using port {port}\n\n"
+                        f"Try: Kill any running EBI processes or restart your computer."
+                    ) from e
+                raise
 
             def run_server():
                 try:
