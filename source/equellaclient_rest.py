@@ -158,6 +158,9 @@ class TLEClient:
             or os.environ.get("EBI_OAUTH_REDIRECT_URI", "").strip()
         )
 
+        # Validate OAuth redirect URI for security
+        self._validate_oauth_redirect_uri(self._oauth_redirect_uri)
+
         # Authentication: OAuth implicit grant or explicit tokens required (NO FALLBACK TO COOKIES)
         if not (self._rest_access_token or self._rest_admin_token):
             if not self._oauth_client_id:
@@ -251,6 +254,36 @@ class TLEClient:
         except Exception as e:
             self._debug_log(f"OAuth error: {str(e)}")
             raise
+
+    def _validate_oauth_redirect_uri(self, redirect_uri):
+        """Validate OAuth redirect URI for security.
+
+        Ensures that custom redirect URIs only point to localhost to prevent
+        token hijacking attacks. Only HTTP is allowed for localhost (no HTTPS required).
+        """
+        if not redirect_uri or redirect_uri == "default":
+            return  # Default is safe - uses localhost:9999
+
+        try:
+            parsed = urllib.parse.urlparse(redirect_uri)
+
+            # Must use http:// (localhost doesn't need HTTPS)
+            if parsed.scheme != "http":
+                raise ValueError(f"Redirect URI scheme must be 'http', got '{parsed.scheme}'")
+
+            # Must be localhost or 127.0.0.1
+            hostname = parsed.hostname
+            if hostname not in ("localhost", "127.0.0.1", "::1"):
+                raise ValueError(f"Redirect URI must be localhost, got '{hostname}'")
+
+            # Port must be in safe range (1024-65535, excluding well-known ports)
+            port = parsed.port or 80
+            if port < 1024:
+                raise ValueError(f"Redirect URI port {port} is reserved - use port >= 1024")
+
+            self._debug_log(f"Redirect URI validation passed: {redirect_uri}")
+        except ValueError as e:
+            raise ValueError(f"Invalid OAuth redirect URI: {e}") from e
 
     def _debug_log(self, message):
         """Write debug message to file for troubleshooting."""
