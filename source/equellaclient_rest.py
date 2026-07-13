@@ -110,7 +110,8 @@ class TLEClient:
         self.host = parsed.netloc
         self.context = parsed.path
 
-        self._ssl_context = ssl._create_unverified_context()
+        # Use default SSL context with proper certificate validation
+        self._ssl_context = ssl.create_default_context()
         self._cookie_jar = CookieJar()
 
         handlers = [

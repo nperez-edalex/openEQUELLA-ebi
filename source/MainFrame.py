@@ -1310,9 +1310,8 @@ class MainFrame(wx.Frame):
         if saved_username:
             self.txtUsername.SetValue(saved_username)
 
-        saved_password = self.settingsManager.get("password", "")
-        if saved_password:
-            self.txtPassword.SetValue(saved_password)
+        # NOTE: Password is NOT pre-filled from settings for security reasons
+        # Users must enter their password manually each time for their own safety
 
         saved_client_id = self.settingsManager.get("oauth_client_id", "")
         if saved_client_id:
@@ -2301,9 +2300,9 @@ class MainFrame(wx.Frame):
                 fp.close()
 
                 # Also save to persistent settings.json for auto-fill on next startup
+                # NOTE: Password is NOT saved for security (plaintext storage risk)
                 self.settingsManager.set("institution_url", self.txtInstitutionUrl.GetValue().strip())
                 self.settingsManager.set("username", self.txtUsername.GetValue().strip())
-                self.settingsManager.set("password", self.txtPassword.GetValue())
                 self.settingsManager.set("oauth_client_id", self.txtOAuthClientId.GetValue().strip())
                 self.settingsManager.save()
             except:
