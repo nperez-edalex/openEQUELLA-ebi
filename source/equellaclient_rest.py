@@ -311,6 +311,20 @@ class TLEClient:
 
         return token.strip()
 
+    def _add_security_headers(self, handler):
+        """Add security headers to HTTP response to prevent common attacks.
+
+        Headers added:
+        - X-Frame-Options: DENY (prevents clickjacking)
+        - X-Content-Type-Options: nosniff (prevents MIME type sniffing)
+        - X-XSS-Protection: 1; mode=block (legacy XSS protection)
+        - Content-Security-Policy: default-src 'none' (restricts resource loading)
+        """
+        handler.send_header("X-Frame-Options", "DENY")
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.send_header("X-XSS-Protection", "1; mode=block")
+        handler.send_header("Content-Security-Policy", "default-src 'none'")
+
     def _debug_log(self, message):
         """Write debug message to file for troubleshooting."""
         try:
@@ -361,12 +375,14 @@ class TLEClient:
                             outer_self._debug_log(f"Token captured via POST: {validated_token[:20]}...")
                             self.send_response(200)
                             self.send_header("Content-type", "application/json")
+                            outer_self._add_security_headers(self)
                             self.end_headers()
                             self.wfile.write(json.dumps({"status": "success"}).encode())
                         except ValueError as e:
                             outer_self._debug_log(f"Token validation failed: {str(e)}")
                             self.send_response(400)
                             self.send_header("Content-type", "application/json")
+                            outer_self._add_security_headers(self)
                             self.end_headers()
                             self.wfile.write(json.dumps({"error": "Invalid token format"}).encode())
                     else:
@@ -387,6 +403,7 @@ class TLEClient:
                         outer_self._debug_log(f"State validation failed in GET: {params.get('state')} != {expected_state}")
                         self.send_response(400)
                         self.send_header("Content-type", "text/html")
+                        outer_self._add_security_headers(self)
                         self.end_headers()
                         self.wfile.write(b"<h1>Authentication Error</h1><p>Invalid state parameter - possible CSRF attack.</p>")
                         return
@@ -399,13 +416,10 @@ class TLEClient:
                             outer_self._debug_log(f"Token captured from query: {validated_token[:20]}...")
                             self.send_response(200)
                             self.send_header("Content-type", "text/html")
-                        except ValueError as e:
-                            outer_self._debug_log(f"Token validation failed in GET: {str(e)}")
-                            self.send_response(400)
-                            self.send_header("Content-type", "text/html")
-                        self.end_headers()
-                        # Return simple success page
-                        html = b"""<html><head><title>Success</title></head><body>
+                            outer_self._add_security_headers(self)
+                            self.end_headers()
+                            # Return simple success page
+                            html = b"""<html><head><title>Success</title></head><body>
 <h1>openEQUELLA - EQUELLA Bulk Importer</h1>
 <h2>Authorization Successful!</h2>
 <p>Your account has been authorized successfully.</p>
@@ -422,11 +436,19 @@ setTimeout(closeWindow, 500);
 setTimeout(closeWindow, 1500);
 </script>
 </body></html>"""
-                        self.wfile.write(html)
+                            self.wfile.write(html)
+                        except ValueError as e:
+                            outer_self._debug_log(f"Token validation failed in GET: {str(e)}")
+                            self.send_response(400)
+                            self.send_header("Content-type", "text/html")
+                            outer_self._add_security_headers(self)
+                            self.end_headers()
+                            self.wfile.write(b"<h1>Authentication Error</h1><p>Token validation failed. Please try authorizing again.</p>")
                     else:
                         # Return page with JavaScript to extract token from fragment
                         self.send_response(200)
                         self.send_header("Content-type", "text/html; charset=utf-8")
+                        outer_self._add_security_headers(self)
                         self.end_headers()
                         html = b"""<html><head><title>Processing</title></head><body>
 <h1>openEQUELLA - EQUELLA Bulk Importer</h1>
