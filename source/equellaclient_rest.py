@@ -161,7 +161,9 @@ class TLEClient:
             or os.environ.get("EBI_OAUTH_REDIRECT_URI", "").strip()
         )
 
-        # Validate OAuth redirect URI for security
+        # Validate OAuth configuration for security
+        if self._oauth_client_id:
+            self._validate_oauth_client_id(self._oauth_client_id)
         self._validate_oauth_redirect_uri(self._oauth_redirect_uri)
 
         # Authentication: OAuth implicit grant or explicit tokens required (NO FALLBACK TO COOKIES)
@@ -285,6 +287,28 @@ class TLEClient:
             self._debug_log(f"Institution URL validation passed: {url}")
         except ValueError as e:
             raise ValueError(f"Invalid institution URL: {e}") from e
+
+    def _validate_oauth_client_id(self, client_id):
+        """Validate OAuth client ID format for security.
+
+        Ensures the client ID is properly formatted to prevent injection attacks.
+        """
+        if not client_id or not isinstance(client_id, str):
+            raise ValueError("Client ID must be a non-empty string")
+
+        client_id = client_id.strip()
+        if not client_id:
+            raise ValueError("Client ID cannot be empty")
+
+        # Client IDs should contain alphanumeric and common special chars (no spaces or control chars)
+        if any(c in client_id for c in ['\n', '\r', '\t', ' ']):
+            raise ValueError("Client ID contains invalid whitespace characters")
+
+        # Reasonable length check
+        if len(client_id) > 255:
+            raise ValueError(f"Client ID too long ({len(client_id)} chars) - likely invalid")
+
+        return client_id.strip()
 
     def _validate_oauth_redirect_uri(self, redirect_uri):
         """Validate OAuth redirect URI for security.
